@@ -16,7 +16,7 @@ keywords = ["rsk", "robot", "soccer", "kit", "robocup"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-zmq = "*"
-serde_json = "*"
-serde = { version = "*", features = ["derive"] }
-tokio = { version = "*", features = ["full"] }
+zmq = "0.10.0"
+serde_json = "1.0.96"
+serde = { version = "1.0.163", features = ["derive"] }
+tokio = { version = "1.28.2", features = ["rt", "rt-multi-thread", "sync", "time"] }

@@ -7,6 +7,11 @@ authors = [
 ]
 license = "MIT"
 description = "A port of the rsk (robot-soccer-kit) python library"
+homepage = "https://github.com/Undefined-club-robotique/rust-sk"
+repository = "https://github.com/Undefined-club-robotique/rust-sk"
+documentation = "https://github.com/Undefined-club-robotique/rust-sk"
+readme = "README.md"
+keywords = ["robotics", "soccer", "rsk", "robot-soccer-kit", "robot", "kit", "client", "tcp", "zmq", "zeromq", "serde", "tokio", "async", "await", "async-await", "async/await"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

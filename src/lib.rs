@@ -1,9 +1,7 @@
-use std::{thread, sync::{mpsc, Arc}, time::Duration, vec};
+use std::{thread, sync::{mpsc, Arc}, time::Duration};
 use zmq;
 use serde_json;
 use tokio::sync::Mutex;
-
-const GOTO_SMOTHNESS: f32 = 2.0;
 
 pub mod errors {
     #[derive(Debug, Clone)]

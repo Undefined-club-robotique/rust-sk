@@ -1,0 +1,17 @@
+[package]
+name = "rust-sk"
+version = "0.1.0"
+edition = "2021"
+authors = [
+    "Arkitu"    
+]
+license = "MIT"
+description = "A port of the rsk (robot-soccer-kit) python library"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+zmq = "*"
+serde_json = "*"
+serde = { version = "*", features = ["derive"] }
+tokio = { version = "*", features = ["full"] }

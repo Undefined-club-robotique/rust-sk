@@ -28,6 +28,17 @@ pub mod errors {
 }
 use errors::*;
 
+fn angle_wrap(angle: f32) -> f32 {
+    let mut angle = angle;
+    while angle > std::f32::consts::PI {
+        angle -= 2.0 * std::f32::consts::PI;
+    }
+    while angle < -std::f32::consts::PI {
+        angle += 2.0 * std::f32::consts::PI;
+    }
+    angle
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum Team {
     Green,
@@ -68,8 +79,8 @@ impl ToString for Command {
     fn to_string(&self) -> String {
         match self {
             Self::Kick(a) => format!(r#"["kick", {a}]"#),
-            Self::Control(p) => format!(r#"["control", {}, {}, {}]"#, p.0, p.1, p.2),
-            Self::Teleport(p) => format!(r#"["teleport", {}, {}, {}]"#, p.0, p.1, p.2),
+            Self::Control(p) => format!(r#"["control", {}, {}, {}]"#, p.0, p.1, p.get_theta()),
+            Self::Teleport(p) => format!(r#"["teleport", {}, {}, {}]"#, p.0, p.1, p.get_theta()),
             Self::Leds(a) => format!(r#"["leds", {}, {}, {}]"#, a.0, a.1, a.2),
             Self::Beep(a, b) => format!(r#"["beep", {a}, {b}]"#)
         }
@@ -80,37 +91,60 @@ impl ToString for Command {
 pub struct Destination {
     pub pose: AbsPose,
     pub speed: f32,
-    pub smoothness: f32
+    pub rotation_speed: f32
 }
 impl Destination {
-    pub fn new(pose: AbsPose, speed: f32, smoothness: f32) -> Self {
+    pub fn new(pose: AbsPose, speed: f32, rotation_speed: f32) -> Self {
         Self {
             pose,
             speed,
-            smoothness
+            rotation_speed
         }
     }
     pub fn from_pose(pose: AbsPose) -> Self {
-        Self::new(pose, 5.0, 0.1)
+        Self::new(pose, 3.0, 10.0)
     }
     pub fn to_control_command(&self, actual_pose:AbsPose) -> Command {
-        let angle = self.pose.2 - actual_pose.2;
-        
-        let mut vector = actual_pose - self.pose;
-        vector.0 -= (vector.0.exp() * self.smoothness).min(0.0);
-        vector.1 -= (vector.1.exp() * self.smoothness).min(0.0);
-        
-        vector.0 *= self.speed;
-        vector.1 *= self.speed;
+        let mut vector = MoveVector::new(self.pose.0, self.pose.1);
 
-        vector = MoveVector(
-            vector.0 * angle.cos() - vector.1 * angle.sin(),
-            vector.0 * angle.sin() + vector.1 * angle.cos()
+        // Translate the vector to the robot's frame
+        vector.0 -= actual_pose.0;
+        vector.1 -= actual_pose.1;
+
+        // Rotate the vector to the robot's frame
+        let cos = angle_wrap(-actual_pose.2).cos();
+        let sin = angle_wrap(-actual_pose.2).sin();
+
+        vector = MoveVector::new(
+            vector.0 * cos - vector.1 * sin,
+            vector.0 * sin + vector.1 * cos
         );
 
-        Command::Control(
-            AbsPose(vector.0, vector.1, angle)
-        )
+        // Smooth the vector and do magic
+        let distance = (actual_pose - self.pose).norm();
+        let mut speed = self.speed;
+
+        let t = distance;
+
+        speed =  (2.0 * t * (1.0 - t) + t.powi(2)) * speed;
+
+        vector = MoveVector::new(
+            (vector.0 * speed) / vector.norm(),
+            (vector.1 * speed) / vector.norm()
+        );
+
+        // Compute the angle
+        let speed = self.rotation_speed;
+
+        // Apply speed
+        let mut angle = angle_wrap(self.pose.2 - actual_pose.2);
+        angle *= speed;
+
+        Command::Control(AbsPose(
+            vector.0 + actual_pose.0,
+            vector.1 + actual_pose.1,
+            angle
+        ))
     }
 }
 
@@ -193,7 +227,7 @@ impl Robot<'_> {
 pub mod game_data_structs {
     use serde::{Serialize, Deserialize};
 
-    use super::{Team, Client, errors::RskResult};
+    use super::{Team, Client, errors::RskResult, angle_wrap};
     /* Sample game data:
     {
         "markers": {
@@ -281,14 +315,14 @@ pub mod game_data_structs {
         pub f32
     );
     impl Pose for AbsPose {
-        fn new(x: f32, y: f32, theta: f32) -> Self {AbsPose(x, y, theta)}
+        fn new(x: f32, y: f32, theta: f32) -> Self {AbsPose(x, y, angle_wrap(theta))}
         fn get_x(&self) -> f32 {self.0}
         fn get_y(&self) -> f32 {self.1}
         fn get_theta(&self) -> f32 {self.2}
         fn set_x(&mut self, x: f32) {self.0 = x;}
         fn set_y(&mut self, y: f32) {self.1 = y;}
         fn set_theta(&mut self, theta: f32) {
-            self.2 = ((theta + std::f32::consts::PI) % (2.0 * std::f32::consts::PI)) - std::f32::consts::PI;
+            self.2 = angle_wrap(theta);
         }
     }
     impl std::ops::Sub for AbsPose {
@@ -297,6 +331,16 @@ pub mod game_data_structs {
             MoveVector (
                 other.get_x() - self.get_x(),
                 other.get_y() - self.get_y()
+            )
+        }
+    }
+    impl std::ops::Add<MoveVector> for AbsPose {
+        type Output = AbsPose;
+        fn add(self, other: MoveVector) -> AbsPose {
+            AbsPose (
+                self.get_x() + other.0,
+                self.get_y() + other.1,
+                self.get_theta()
             )
         }
     }
@@ -327,14 +371,16 @@ pub mod game_data_structs {
         pub f32
     );
     impl Pose for RelPose {
-        fn new(x: f32, y: f32, theta: f32) -> Self {RelPose(x, y, theta)}
+        fn new(x: f32, y: f32, theta: f32) -> Self {
+            RelPose(x, y, angle_wrap(theta))
+        }
         fn get_x(&self) -> f32 {self.0}
         fn get_y(&self) -> f32 {self.1}
         fn get_theta(&self) -> f32 {self.2}
         fn set_x(&mut self, x: f32) {self.0 = x;}
         fn set_y(&mut self, y: f32) {self.1 = y;}
         fn set_theta(&mut self, theta: f32) {
-            self.2 = ((theta + std::f32::consts::PI) % (2.0 * std::f32::consts::PI)) - std::f32::consts::PI;
+            self.2 = angle_wrap(theta);
         }
     }
     impl std::ops::Sub for RelPose {
@@ -385,6 +431,11 @@ pub mod game_data_structs {
     pub struct Orientation(
         pub f32
     );
+    impl Orientation {
+        pub fn new(theta: f32) -> Self {
+            Orientation(angle_wrap(theta))
+        }
+    }
 
     #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
     pub struct MoveVector (
@@ -410,6 +461,9 @@ pub mod game_data_structs {
         }
     }
     impl MoveVector {
+        pub fn new(x: f32, y: f32) -> Self {
+            MoveVector(x, y)
+        }
         pub fn norm(&self) -> f32 {
             (self.0.powi(2) + self.1.powi(2)).sqrt()
         }

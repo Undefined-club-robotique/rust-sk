@@ -52,6 +52,14 @@ impl ToString for Team {
         }
     }
 }
+impl Team {
+    pub fn other(&self) -> Self {
+        match self {
+            Self::Green => Self::Blue,
+            Self::Blue => Self::Green
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum RobotNumber {
@@ -73,7 +81,8 @@ pub enum Command {
     Control(AbsPose),
     Teleport(AbsPose),
     Leds(GameDataLedsValue),
-    Beep(u16, u16)
+    Beep(u16, u16),
+    BallTeleport(AbsPose)
 }
 impl ToString for Command {
     fn to_string(&self) -> String {
@@ -82,7 +91,8 @@ impl ToString for Command {
             Self::Control(p) => format!(r#"["control", {}, {}, {}]"#, p.0, p.1, p.get_theta()),
             Self::Teleport(p) => format!(r#"["teleport", {}, {}, {}]"#, p.0, p.1, p.get_theta()),
             Self::Leds(a) => format!(r#"["leds", {}, {}, {}]"#, a.0, a.1, a.2),
-            Self::Beep(a, b) => format!(r#"["beep", {a}, {b}]"#)
+            Self::Beep(a, b) => format!(r#"["beep", {a}, {b}]"#),
+            Self::BallTeleport(p) => format!(r#"["teleport", {}, {}, {}]"#, p.0, p.1, p.get_theta())
         }
     }
 }
@@ -655,9 +665,16 @@ impl Client {
                 number,
                 command
             ) = rx.recv()?;
+
+            let team_str = if let Command::BallTeleport(_) = command {
+                "ball".to_string()
+            } else {
+                team.to_string()
+            };
+
             req.send(
                 zmq::Message::from(
-                    &format!(r#"["{0}", "{1}", {2}, {3}]"#, key, team.to_string(), number.to_string(), command.to_string())
+                    &format!(r#"["{0}", "{1}", {2}, {3}]"#, key, team_str, number.to_string(), command.to_string())
                 ),
                 0
             )?;
@@ -863,5 +880,8 @@ impl Client {
     }
     pub async fn get_allies(&self) -> RskResult<(Robot, Robot)> {
         Ok((self.get_robot(self.team, RobotNumber::One)?, self.get_robot(self.team, RobotNumber::Two)?))
+    }
+    pub async fn get_enemies(&self) -> RskResult<(Robot, Robot)> {
+        Ok((self.get_robot(self.team.other(), RobotNumber::One)?, self.get_robot(self.team.other(), RobotNumber::Two)?))
     }
 }
